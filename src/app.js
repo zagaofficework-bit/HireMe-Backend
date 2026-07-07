@@ -1,17 +1,17 @@
-require('dotenv').config();
+require("dotenv").config();
 
 // Initialize Firebase Admin before anything else
-require('./config/firebase');
+require("./config/firebase");
 
-const express  = require('express');
-const cors     = require('cors');
-const helmet   = require('helmet');
-const morgan   = require('morgan');
+const express = require("express");
+const cors = require("cors");
+const helmet = require("helmet");
+const morgan = require("morgan");
 //const mongoSanitize = require('express-mongo-sanitize');
 
-const { apiLimiter }  = require('./middlewares/rateLimiter.middleware');
-const errorHandler    = require('./middlewares/error.middleware');
-const routes          = require('./routes/index');
+const { apiLimiter } = require("./middlewares/rateLimiter.middleware");
+const errorHandler = require("./middlewares/error.middleware");
+const routes = require("./routes/index");
 
 const app = express();
 
@@ -30,9 +30,11 @@ const app = express();
  * "same-origin-allow-popups" keeps the isolation benefits but allows the
  * opener (your app) to interact with popups it explicitly opened (Firebase auth).
  */
-app.use(helmet({
-  crossOriginOpenerPolicy: { policy: 'same-origin-allow-popups' },
-}));
+app.use(
+  helmet({
+    crossOriginOpenerPolicy: { policy: "same-origin-allow-popups" },
+  }),
+);
 
 // ── CORS ─────────────────────────────────────────────────────────
 /**
@@ -42,24 +44,30 @@ app.use(helmet({
  * In production: allow only your deployed frontend domain
  */
 const allowedOrigins = process.env.ALLOWED_ORIGINS
-  ? process.env.ALLOWED_ORIGINS.split(',').map((o) => o.trim())
-  : ['http://localhost:3000'];
+  ? process.env.ALLOWED_ORIGINS.split(",").map((o) => o.trim())
+  : ["http://localhost:3000"];
 
-app.use(
-  cors({
-    origin: (origin, callback) => {
-      // Allow requests with no origin (Postman, mobile apps, server-to-server)
-      if (!origin) return callback(null, true);
-      if (allowedOrigins.includes(origin)) return callback(null, true);
-      callback(new Error(`CORS blocked: ${origin} not allowed`));
-    },
-    credentials: true, // allow cookies if needed later
-  })
-);
-app.options('*', cors());
+const corsOptions = {
+  origin: (origin, callback) => {
+    if (!origin) return callback(null, true);
+
+    if (allowedOrigins.includes(origin)) {
+      return callback(null, true);
+    }
+
+    console.log("❌ Blocked by CORS:", origin);
+    return callback(new Error(`CORS blocked: ${origin} not allowed`));
+  },
+  credentials: true,
+};
+
+app.use(cors(corsOptions));
+
+// ✅ IMPORTANT: use SAME options here
+app.options("*", cors(corsOptions));
 // ── Request Parsing ───────────────────────────────────────────────
-app.use(express.json({ limit: '10kb' }));           // parse JSON body (limit prevents huge payloads)
-app.use(express.urlencoded({ extended: true, limit: '10kb' }));
+app.use(express.json({ limit: "10kb" })); // parse JSON body (limit prevents huge payloads)
+app.use(express.urlencoded({ extended: true, limit: "10kb" }));
 
 // ── NoSQL Injection Protection ────────────────────────────────────
 /**
@@ -71,29 +79,29 @@ app.use(express.urlencoded({ extended: true, limit: '10kb' }));
 
 // ── Logging ───────────────────────────────────────────────────────
 // morgan logs every request: method, path, status, response time
-if (process.env.NODE_ENV === 'development') {
-  app.use(morgan('dev'));     // compact colored output in dev
+if (process.env.NODE_ENV === "development") {
+  app.use(morgan("dev")); // compact colored output in dev
 } else {
-  app.use(morgan('combined')); // Apache-style logs in production
+  app.use(morgan("combined")); // Apache-style logs in production
 }
 
 // ── Global Rate Limiter ───────────────────────────────────────────
 // Applied to all /api routes — 100 req per 15 min per IP
-app.use('/api', apiLimiter);
+app.use("/api", apiLimiter);
 
 // ── Health Check ─────────────────────────────────────────────────
 // Simple endpoint to confirm server is running (used by Render/Hostinger monitoring)
-app.get('/health', (req, res) => {
+app.get("/health", (req, res) => {
   res.status(200).json({
     success: true,
-    message: 'Hyrd API is running',
+    message: "Hyrd API is running",
     environment: process.env.NODE_ENV,
     timestamp: new Date().toISOString(),
   });
 });
 
 // ── API Routes ────────────────────────────────────────────────────
-app.use('/api/v1', routes);
+app.use("/api/v1", routes);
 
 // ── 404 Handler ───────────────────────────────────────────────────
 // If no route matched, send a clean 404
