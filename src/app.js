@@ -22,8 +22,17 @@ const app = express();
  *  - X-Frame-Options: DENY (prevent clickjacking)
  *  - Strict-Transport-Security (force HTTPS)
  *  - And more...
+ *
+ * ✅ FIX: helmet's default Cross-Origin-Opener-Policy is "same-origin",
+ * which blocks Firebase's signInWithPopup() flow — the popup can't call
+ * window.closed / window.close() across origins, so login silently fails
+ * or throws "Cross-Origin-Opener-Policy policy would block the window.close call."
+ * "same-origin-allow-popups" keeps the isolation benefits but allows the
+ * opener (your app) to interact with popups it explicitly opened (Firebase auth).
  */
-app.use(helmet());
+app.use(helmet({
+  crossOriginOpenerPolicy: { policy: 'same-origin-allow-popups' },
+}));
 
 // ── CORS ─────────────────────────────────────────────────────────
 /**
@@ -47,7 +56,7 @@ app.use(
     credentials: true, // allow cookies if needed later
   })
 );
-
+app.options('*', cors());
 // ── Request Parsing ───────────────────────────────────────────────
 app.use(express.json({ limit: '10kb' }));           // parse JSON body (limit prevents huge payloads)
 app.use(express.urlencoded({ extended: true, limit: '10kb' }));
