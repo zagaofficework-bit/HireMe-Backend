@@ -20,7 +20,7 @@ const startServer = async () => {
   await connectDB();
 
   const server = app.listen(PORT, () => {
-    console.log(`🚀 HireMe server running on port ${PORT}`);
+    console.log(`🚀 Hyrd server running on port ${PORT}`);
     console.log(`🌍 Environment: ${process.env.NODE_ENV}`);
     console.log(`📡 API Base: http://localhost:${PORT}/api/v1`);
     console.log(`❤️  Health: http://localhost:${PORT}/health`);

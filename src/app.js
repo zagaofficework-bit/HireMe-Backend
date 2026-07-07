@@ -77,7 +77,7 @@ app.use('/api', apiLimiter);
 app.get('/health', (req, res) => {
   res.status(200).json({
     success: true,
-    message: 'HireMe API is running',
+    message: 'Hyrd API is running',
     environment: process.env.NODE_ENV,
     timestamp: new Date().toISOString(),
   });

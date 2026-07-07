@@ -1,6 +1,6 @@
-# HireMe Backend API — Developer Guide
+# Hyrd Backend API — Developer Guide
 
-> Complete reference for frontend developers integrating with the HireMe REST API.
+> Complete reference for frontend developers integrating with the Hyrd REST API.
 
 ---
 
