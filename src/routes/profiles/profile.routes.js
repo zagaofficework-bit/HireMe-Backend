@@ -2,6 +2,7 @@ const router = require('express').Router();
 const { protect, optionalAuth } = require('../../middlewares/auth.middleware');
 const { authorizeRoles } = require('../../middlewares/role.middleware');
 const validate = require('../../middlewares/validate.middleware');
+const { uploadProfileImage } = require('../../middlewares/upload.middleware'); // ← add
 const {
   createProfileSchema,
   updateBasicSchema,
@@ -13,6 +14,8 @@ const {
   updateSocialSchema,
   updateContactSchema,
   updateLanguagesSchema,
+  updateCertificationsSchema,
+  updatePortfolioSchema,
 } = require('../../validations/profiles/profile.validation');
 const {
   createProfileController,
@@ -27,7 +30,11 @@ const {
   updateSocialController,
   updateContactController,
   updateLanguagesController,
+  updateCertificationsController, // ← add
+  updatePortfolioController,      // ← add
+  updateProfileImageController, // ← add
   toggleVisibilityController,
+  submitForApprovalController,    // ← add
   deleteProfileController,
 } = require('../../controllers/profiles/profile.controller');
 
@@ -43,7 +50,11 @@ router.patch('/me/location',  protect, authorizeRoles('user'), validate(updateLo
 router.patch('/me/social',    protect, authorizeRoles('user'), validate(updateSocialSchema),     updateSocialController);
 router.patch('/me/contact',   protect, authorizeRoles('user'), validate(updateContactSchema),    updateContactController);
 router.patch('/me/languages', protect, authorizeRoles('user'), validate(updateLanguagesSchema),  updateLanguagesController);
+router.patch('/me/certifications', protect, authorizeRoles('user'), validate(updateCertificationsSchema), updateCertificationsController); // ← add
+router.patch('/me/portfolio', protect, authorizeRoles('user'), validate(updatePortfolioSchema), updatePortfolioController); // ← add
+router.patch('/me/photo',     protect, authorizeRoles('user'), uploadProfileImage, updateProfileImageController); // ← add
 router.patch('/me/visibility',protect, authorizeRoles('user'),                                   toggleVisibilityController);
+router.post('/me/submit-for-approval', protect, authorizeRoles('user'), submitForApprovalController); // ← add (fixes 404)
 router.delete('/me',          protect, authorizeRoles('user'),                                   deleteProfileController);
 
 // ── Public profile view (optionalAuth — guests see less) ──────────

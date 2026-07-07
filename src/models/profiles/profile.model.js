@@ -144,6 +144,18 @@ const profileSchema = new mongoose.Schema(
     isFeatured: { type: Boolean, default: false }, // admin can feature profile on homepage
     isVerified: { type: Boolean, default: false }, // admin verified badge
 
+    // ── Approval workflow ───────────────────────────────────────────
+    // 'draft' = never submitted, 'pending' = awaiting admin review,
+    // 'approved' / 'rejected' = admin decision.
+    approvalStatus: {
+      type: String,
+      enum: ['draft', 'pending', 'approved', 'rejected'],
+      default: 'draft',
+    },
+    submittedForApprovalAt: { type: Date, default: null },
+    approvalDecisionAt:     { type: Date, default: null },
+    rejectionReason:        { type: String, trim: true, maxlength: 500, default: null },
+
     // ── Stats (denormalized for fast queries) ─────────────────────
     totalViews:   { type: Number, default: 0 },
     averageRating:{ type: Number, default: 0, min: 0, max: 5 },

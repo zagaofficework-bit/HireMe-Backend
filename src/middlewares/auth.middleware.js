@@ -3,11 +3,43 @@ const ApiError = require('../utils/ApiError');
 const asyncHandler = require('../utils/asyncHandler');
 const User = require('../models/auth/auth.model');
 
+// Firebase error codes that mean the token is expired/invalid (not a server bug)
+// Without this, Firebase throws a raw error with no statusCode, which the global
+// error handler turns into a 500 — so the frontend never sees a 401 and the
+// response interceptor's token-refresh logic never triggers.
+const FIREBASE_TOKEN_ERRORS = new Set([
+  'auth/id-token-expired',     // token older than 1 hour
+  'auth/id-token-revoked',     // token manually revoked (e.g. password change)
+  'auth/argument-error',       // malformed token string
+  'auth/invalid-id-token',     // token failed signature check
+  'auth/user-disabled',        // Firebase account disabled
+]);
+
+/**
+ * verifyToken — shared helper used by all three middlewares below.
+ *
+ * Wraps admin.auth().verifyIdToken() and maps Firebase errors to proper
+ * ApiError(401) so the global error handler always returns a 401 (not 500)
+ * when the token is bad. The frontend response interceptor depends on this.
+ */
+const verifyToken = async (idToken) => {
+  try {
+    return await admin.auth().verifyIdToken(idToken);
+  } catch (err) {
+    if (FIREBASE_TOKEN_ERRORS.has(err.code)) {
+      // Token is expired or invalid — client should refresh and retry
+      throw new ApiError(401, 'Token expired or invalid. Please login again.');
+    }
+    // Unexpected Firebase/network error — still a 401 from the client's POV
+    throw new ApiError(401, 'Token verification failed. Please login again.');
+  }
+};
+
 /**
  * protect
- * 
+ *
  * How Firebase auth works with your backend:
- * 
+ *
  * 1. User logs in on frontend using Firebase (Google, email, phone)
  * 2. Firebase gives frontend an "ID Token" (a long JWT string)
  * 3. Frontend sends this token in every API request:
@@ -27,8 +59,8 @@ const protect = asyncHandler(async (req, res, next) => {
 
   const idToken = authHeader.split('Bearer ')[1];
 
-  // Ask Firebase Admin: is this token real and not expired?
-  const decoded = await admin.auth().verifyIdToken(idToken);
+  // verifyToken throws ApiError(401) on any Firebase error — not 500
+  const decoded = await verifyToken(idToken);
 
   // decoded contains: uid, email, phone_number, email_verified, etc.
   // Now fetch the full user profile from our own DB
@@ -53,11 +85,11 @@ const protect = asyncHandler(async (req, res, next) => {
 
 /**
  * optionalAuth
- * 
+ *
  * For routes that work for both guests AND logged-in users.
  * Example: viewing a public profile — guests see limited data,
  * logged-in clients see contact details.
- * 
+ *
  * Does NOT throw an error if no token — just sets req.user = null
  */
 const optionalAuth = asyncHandler(async (req, res, next) => {
@@ -70,10 +102,11 @@ const optionalAuth = asyncHandler(async (req, res, next) => {
 
   try {
     const idToken = authHeader.split('Bearer ')[1];
-    const decoded = await admin.auth().verifyIdToken(idToken);
+    const decoded = await verifyToken(idToken); // uses shared helper
     const user = await User.findOne({ firebaseUid: decoded.uid });
     req.user = user || null;
   } catch {
+    // Any error (expired token, bad token, DB miss) → treat as guest
     req.user = null;
   }
 
@@ -82,11 +115,11 @@ const optionalAuth = asyncHandler(async (req, res, next) => {
 
 /**
  * verifyFirebaseToken
- * 
+ *
  * Lighter version of protect — ONLY verifies the Firebase token.
  * Does NOT require the user to exist in our MongoDB yet.
  * Used specifically for /register routes where the user is NEW.
- * 
+ *
  * After verification, req.firebaseUser contains:
  *   { uid, email, phone_number, email_verified }
  */
@@ -98,7 +131,9 @@ const verifyFirebaseToken = asyncHandler(async (req, res, next) => {
   }
 
   const idToken = authHeader.split('Bearer ')[1];
-  const decoded = await admin.auth().verifyIdToken(idToken);
+
+  // verifyToken throws ApiError(401) on any Firebase error — not 500
+  const decoded = await verifyToken(idToken);
 
   req.firebaseUser = decoded; // uid, email, phone_number available
   next();

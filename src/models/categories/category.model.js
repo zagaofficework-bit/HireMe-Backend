@@ -4,6 +4,11 @@ const mongoose = require('mongoose');
  * Category Model
  * Admin creates these. Users pick one when building their profile.
  * Examples: Web Development, Graphic Design, Data Science, etc.
+ *
+ * `skills` holds the specific job-titles/roles under this category
+ * (e.g. Category "Software & IT" -> skills: ["React Developer", "DevOps Engineer", ...]).
+ * Used to populate the skills dropdown on profile creation, scoped to the
+ * category the user selects.
  */
 const categorySchema = new mongoose.Schema(
   {
@@ -35,6 +40,17 @@ const categorySchema = new mongoose.Schema(
       default: '💼',
     },
 
+    // Specific roles/professions under this category.
+    // Powers the skills dropdown in profile creation + skill-based search.
+    skills: {
+      type: [String],
+      default: [],
+      set: (arr) =>
+        Array.isArray(arr)
+          ? [...new Set(arr.map((s) => String(s).trim()).filter(Boolean))]
+          : arr,
+    },
+
     isActive: {
       type: Boolean,
       default: true,
@@ -63,5 +79,6 @@ const categorySchema = new mongoose.Schema(
 
 categorySchema.index({ slug: 1 });
 categorySchema.index({ isActive: 1, isFeatured: -1, order: 1 });
+categorySchema.index({ skills: 1 }); // supports skill-based search/filtering
 
 module.exports = mongoose.model('Category', categorySchema);

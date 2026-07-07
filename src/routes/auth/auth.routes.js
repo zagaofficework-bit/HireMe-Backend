@@ -6,22 +6,9 @@ const { registerUserSchema, registerClientSchema } = require('../../validations/
 const {
   registerUserController,
   registerClientController,
+  googleAuthController,
   getMe,
 } = require('../../controllers/auth/auth.controller');
-
-/**
- * Auth Routes
- * 
- * Middleware chain explained:
- *   authLimiter      → max 20 requests per 15 min (prevent abuse)
- *   verifyFirebaseToken → check Firebase token is valid
- *   validate(schema) → check request body shape
- *   controller       → do the work
- * 
- * verifyFirebaseToken is a lighter version of protect:
- * it only verifies the Firebase token without requiring
- * the user to already exist in our DB (they're registering!)
- */
 
 // POST /api/v1/auth/register/user
 router.post(
@@ -41,7 +28,27 @@ router.post(
   registerClientController
 );
 
-// GET /api/v1/auth/me  (requires full protect — user must exist in DB)
+/**
+ * POST /api/v1/auth/google
+ *
+ * Single endpoint for Google sign-in — handles both new and returning users.
+ * Frontend calls this right after firebase.signInWithPopup() succeeds,
+ * sending the Firebase ID token in the Authorization header and
+ * optionally { role: 'client' | 'user' } in the body (for new users).
+ *
+ * Middleware chain:
+ *   authLimiter         → rate-limit abuse
+ *   verifyFirebaseToken → decode + attach req.firebaseUser (uid, email, name…)
+ *   controller          → upsert MongoDB profile, return { user, requiresMobile }
+ */
+router.post(
+  '/google',
+  authLimiter,
+  verifyFirebaseToken,
+  googleAuthController
+);
+
+// GET /api/v1/auth/me
 router.get('/me', protect, getMe);
 
 module.exports = router;

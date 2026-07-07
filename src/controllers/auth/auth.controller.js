@@ -5,32 +5,17 @@ const {
   registerClient,
   getUserByFirebaseUid,
   updateLastLogin,
+  googleAuth,
 } = require('../../services/auth/auth.service');
 
 /**
- * Auth Controllers
- * 
- * Controllers are THIN — they:
- * 1. Extract data from req
- * 2. Call the service
- * 3. Send the response
- * 
- * They do NOT contain business logic.
- * 
- * Note: req.user is populated by protect middleware (auth.middleware.js)
- * It contains the full MongoDB user document.
- * req.firebaseUser contains the raw decoded Firebase token.
- */
-
-/**
  * POST /api/v1/auth/register/user
- * Called after Firebase signup — creates MongoDB profile with role=user
  */
 const registerUserController = asyncHandler(async (req, res) => {
   const { name, email, phone } = req.body;
 
   const user = await registerUser({
-    firebaseUid: req.firebaseUser.uid,     // from verifyFirebaseToken middleware
+    firebaseUid: req.firebaseUser.uid,
     name,
     email: email || req.firebaseUser.email,
     phone: phone || req.firebaseUser.phone_number,
@@ -43,7 +28,6 @@ const registerUserController = asyncHandler(async (req, res) => {
 
 /**
  * POST /api/v1/auth/register/client
- * Creates MongoDB profile with role=client
  */
 const registerClientController = asyncHandler(async (req, res) => {
   const { name, email, phone } = req.body;
@@ -61,13 +45,50 @@ const registerClientController = asyncHandler(async (req, res) => {
 });
 
 /**
+ * POST /api/v1/auth/google
+ *
+ * Called by the frontend after a successful Firebase Google sign-in.
+ * Handles both first-time registration AND returning login in one shot:
+ *   - If the firebaseUid already exists in MongoDB → update lastLogin, return existing user
+ *   - If it's new → create the MongoDB profile with the correct role
+ *
+ * The frontend sends { role } ('user' | 'client') from the role toggle
+ * so we know which profile type to create on first sign-in.
+ *
+ * Requires: verifyFirebaseToken middleware (Firebase token in Authorization header)
+ */
+const googleAuthController = asyncHandler(async (req, res) => {
+  // role comes from sessionStorage.pendingRole set before Google sign-in
+  const { role } = req.body;
+
+  const user = await googleAuth({
+    firebaseUid: req.firebaseUser.uid,
+    name:  req.firebaseUser.name  || req.firebaseUser.email?.split('@')[0] || 'User',
+    email: req.firebaseUser.email || undefined,
+    phone: req.firebaseUser.phone_number || undefined,
+    // Default to 'user' (freelancer) if role not provided
+    role: role === 'client' ? 'client' : 'user',
+  });
+
+  // requiresMobile tells the frontend to route into the OTP flow
+  // to link/verify a phone number (Google accounts don't always have one)
+  const requiresMobile = !user.phone && !user.isPhoneVerified;
+
+  return res
+    .status(200)
+    .json(
+      new ApiResponse(
+        200,
+        { user, requiresMobile },
+        requiresMobile ? 'Phone number required' : 'Google auth successful'
+      )
+    );
+});
+
+/**
  * GET /api/v1/auth/me
- * Returns the logged-in user's profile
- * Used on app load to restore session
  */
 const getMe = asyncHandler(async (req, res) => {
-  // req.user is already populated by protect middleware
-  // Just update last login and return
   await updateLastLogin(req.user._id);
 
   return res
@@ -78,5 +99,6 @@ const getMe = asyncHandler(async (req, res) => {
 module.exports = {
   registerUserController,
   registerClientController,
+  googleAuthController,
   getMe,
 };

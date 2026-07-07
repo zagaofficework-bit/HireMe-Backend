@@ -2,20 +2,9 @@ const User = require('../../models/auth/auth.model');
 const ApiError = require('../../utils/ApiError');
 
 /**
- * Auth Service
- * 
- * Services contain the BUSINESS LOGIC.
- * Controllers just call services — they don't do the work themselves.
- * This keeps controllers thin and logic reusable.
- */
-
-/**
- * Register a new user (role: 'user')
- * Called after Firebase creates the account on frontend.
- * We create their MongoDB profile with role = 'user'.
+ * Register a new user (role: 'user' / freelancer)
  */
 const registerUser = async ({ firebaseUid, name, email, phone }) => {
-  // Check if already registered (e.g. double-submit)
   const existing = await User.findOne({ firebaseUid });
   if (existing) {
     throw new ApiError(409, 'Account already registered');
@@ -28,7 +17,8 @@ const registerUser = async ({ firebaseUid, name, email, phone }) => {
     phone: phone || undefined,
     role: 'user',
     status: 'active',
-    isEmailVerified: !!email, // Firebase already verified email if they used email auth
+    isEmailVerified: !!email,
+    isPhoneVerified: !!phone,
   });
 
   return user;
@@ -36,7 +26,6 @@ const registerUser = async ({ firebaseUid, name, email, phone }) => {
 
 /**
  * Register a new client (role: 'client')
- * Same flow but role is permanently set to 'client'
  */
 const registerClient = async ({ firebaseUid, name, email, phone }) => {
   const existing = await User.findOne({ firebaseUid });
@@ -52,6 +41,43 @@ const registerClient = async ({ firebaseUid, name, email, phone }) => {
     role: 'client',
     status: 'active',
     isEmailVerified: !!email,
+    isPhoneVerified: !!phone,
+  });
+
+  return user;
+};
+
+/**
+ * Google Auth — upsert logic
+ *
+ * Called from googleAuthController after Firebase Google sign-in.
+ * - Existing user  → bump lastLoginAt, return as-is (role never changes)
+ * - New user       → create profile with the chosen role
+ *
+ * We intentionally do NOT overwrite role for returning users so a
+ * freelancer can't accidentally become a client by toggling the pill
+ * on a subsequent login.
+ */
+const googleAuth = async ({ firebaseUid, name, email, phone, role }) => {
+  // Returning user — just refresh last-login and return
+  const existing = await User.findOneAndUpdate(
+    { firebaseUid },
+    { lastLoginAt: new Date() },
+    { new: true }
+  );
+  if (existing) return existing;
+
+  // First-time Google user — create their profile
+  const user = await User.create({
+    firebaseUid,
+    name,
+    email: email || undefined,
+    phone: phone || undefined,
+    role: role === 'client' ? 'client' : 'user',
+    status: 'active',
+    isEmailVerified: !!email,   // Google accounts have verified emails
+    isPhoneVerified: !!phone,
+    lastLoginAt: new Date(),
   });
 
   return user;
@@ -59,7 +85,6 @@ const registerClient = async ({ firebaseUid, name, email, phone }) => {
 
 /**
  * Get user by Firebase UID
- * Used by the protect middleware and getMe controller
  */
 const getUserByFirebaseUid = async (firebaseUid) => {
   const user = await User.findOne({ firebaseUid });
@@ -69,7 +94,6 @@ const getUserByFirebaseUid = async (firebaseUid) => {
 
 /**
  * Update last login timestamp
- * Called when user hits /me after login
  */
 const updateLastLogin = async (userId) => {
   await User.findByIdAndUpdate(userId, { lastLoginAt: new Date() });
@@ -78,6 +102,7 @@ const updateLastLogin = async (userId) => {
 module.exports = {
   registerUser,
   registerClient,
+  googleAuth,
   getUserByFirebaseUid,
   updateLastLogin,
 };

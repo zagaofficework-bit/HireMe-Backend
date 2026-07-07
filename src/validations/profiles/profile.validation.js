@@ -115,6 +115,33 @@ const updateLanguagesSchema = Joi.object({
   ).max(10).required(),
 });
 
+// ── Certifications ────────────────────────────────────────────────
+const updateCertificationsSchema = Joi.object({
+  certifications: Joi.array().items(
+    Joi.object({
+      name:   Joi.string().max(150).required(),
+      issuer: Joi.string().max(150).required(),
+      year:   Joi.number().min(1970).max(new Date().getFullYear()).optional(),
+      url:    Joi.string().uri().optional().allow('', null),
+    })
+  ).max(20).required(),
+});
+
+// ── Portfolio / Projects ─────────────────────────────────────────
+const updatePortfolioSchema = Joi.object({
+  portfolio: Joi.array().items(
+    Joi.object({
+      title:       Joi.string().max(150).required(),
+      description: Joi.string().max(500).optional().allow('', null),
+      url:         Joi.string().uri().optional().allow('', null),
+      image: Joi.object({
+        url:      Joi.string().optional().allow('', null),
+        publicId: Joi.string().optional().allow('', null),
+      }).optional(),
+    })
+  ).max(20).required(),
+});
+
 module.exports = {
   createProfileSchema,
   updateBasicSchema,
@@ -126,4 +153,6 @@ module.exports = {
   updateSocialSchema,
   updateContactSchema,
   updateLanguagesSchema,
+  updateCertificationsSchema,
+  updatePortfolioSchema,
 };

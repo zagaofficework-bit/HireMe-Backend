@@ -1,6 +1,8 @@
 const asyncHandler = require('../../utils/asyncHandler');
 const ApiResponse = require('../../utils/ApiResponse');
+const ApiError = require('../../utils/ApiError');
 const { trackEvent } = require('../../services/analytics/analytics.service');
+const { uploadToCloudinary, deleteFromCloudinary } = require('../../middlewares/upload.middleware');
 const {
   createProfile,
   getMyProfile,
@@ -9,6 +11,7 @@ const {
   toggleVisibility,
   incrementProfileView,
   deleteProfile,
+  submitForApproval,
 } = require('../../services/profiles/profile.service');
 
 /**
@@ -124,12 +127,68 @@ const updateLanguagesController = asyncHandler(async (req, res) => {
 });
 
 /**
+ * PATCH /api/v1/profiles/me/photo
+ * Upload/replace profile photo — multipart, handled by uploadProfileImage middleware (req.file)
+ */
+const updateProfileImageController = asyncHandler(async (req, res) => {
+  if (!req.file) {
+    throw new ApiError(400, 'No image file provided');
+  }
+
+  // Need the existing profile to know if there's an old image to delete
+  const existingProfile = await getMyProfile(req.user._id);
+  const oldPublicId = existingProfile.profileImage?.publicId;
+
+  // Upload new image first, so we never lose the old one if this fails
+  const { url, publicId } = await uploadToCloudinary(req.file.buffer, 'hireme/profiles');
+
+  const profile = await updateSection(req.user._id, {
+    profileImage: { url, publicId },
+  });
+
+  // Delete old image from Cloudinary (best-effort, after the new one is safely saved)
+  if (oldPublicId) {
+    await deleteFromCloudinary(oldPublicId, 'image');
+  }
+
+  return res.status(200).json(
+    new ApiResponse(200, { profile, completion: profile.completionPercentage }, 'Profile photo updated successfully')
+  );
+});
+
+/**
  * PATCH /api/v1/profiles/me/visibility
  * Toggle profile on/off from public search
  */
 const toggleVisibilityController = asyncHandler(async (req, res) => {
   const result = await toggleVisibility(req.user._id);
   return res.status(200).json(new ApiResponse(200, result, `Profile is now ${result.isVisible ? 'visible' : 'hidden'}`));
+});
+
+/**
+ * PATCH /api/v1/profiles/me/certifications
+ */
+const updateCertificationsController = asyncHandler(async (req, res) => {
+  const profile = await updateSection(req.user._id, { certifications: req.body.certifications });
+  return res.status(200).json(new ApiResponse(200, { profile, completion: profile.completionPercentage }, 'Certifications updated'));
+});
+
+/**
+ * PATCH /api/v1/profiles/me/portfolio
+ * "Projects" in the UI — stored as `portfolio` on the backend model.
+ */
+const updatePortfolioController = asyncHandler(async (req, res) => {
+  const profile = await updateSection(req.user._id, { portfolio: req.body.portfolio });
+  return res.status(200).json(new ApiResponse(200, { profile, completion: profile.completionPercentage }, 'Projects updated'));
+});
+
+/**
+ * POST /api/v1/profiles/me/submit-for-approval
+ * Moves profile.approvalStatus from draft/rejected → pending.
+ */
+const submitForApprovalController = asyncHandler(async (req, res) => {
+  const profile = await submitForApproval(req.user._id);
+  return res.status(200).json(new ApiResponse(200, { profile }, 'Profile submitted for admin approval'));
 });
 
 /**
@@ -154,6 +213,10 @@ module.exports = {
   updateSocialController,
   updateContactController,
   updateLanguagesController,
+  updateCertificationsController,
+  updatePortfolioController,
+  updateProfileImageController,
   toggleVisibilityController,
-  deleteProfileController,
+  submitForApprovalController,
+  deleteProfileController
 };

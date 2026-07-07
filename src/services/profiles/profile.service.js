@@ -108,6 +108,36 @@ const deleteProfile = async (userId) => {
   await User.findByIdAndUpdate(userId, { isProfileComplete: false });
 };
 
+/**
+ * submitForApproval
+ * Moves the profile from draft/rejected → pending, so an admin can review it.
+ * Mirrors the REQUIRED_SECTIONS check done on the frontend (basic, skills,
+ * preferences) so the endpoint can't be bypassed by calling the API directly.
+ */
+const submitForApproval = async (userId) => {
+  const profile = await Profile.findOne({ user: userId });
+  if (!profile) throw new ApiError(404, 'Profile not found. Create your profile first.');
+
+  const hasBasic = !!profile.fullName;
+  const hasSkills = (profile.skills?.length || 0) > 0;
+  const hasPreferences = !!profile.workType || !!profile.availability;
+
+  if (!hasBasic || !hasSkills || !hasPreferences) {
+    throw new ApiError(400, 'Complete Basic Info, Skills, and Work Preferences before submitting for approval.');
+  }
+
+  if (profile.approvalStatus === 'pending') {
+    throw new ApiError(409, 'Profile is already pending approval.');
+  }
+
+  profile.approvalStatus = 'pending';
+  profile.submittedForApprovalAt = new Date();
+  profile.rejectionReason = null;
+  await profile.save();
+
+  return profile;
+};
+
 module.exports = {
   createProfile,
   getMyProfile,
@@ -116,5 +146,6 @@ module.exports = {
   toggleVisibility,
   incrementProfileView,
   deleteProfile,
+  submitForApproval,
   calculateCompletion,
 };
