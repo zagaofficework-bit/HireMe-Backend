@@ -1,6 +1,7 @@
 const asyncHandler = require('../../utils/asyncHandler');
 const ApiResponse = require('../../utils/ApiResponse');
 const ApiError = require('../../utils/ApiError');
+const Category = require('../../models/categories/category.model'); // ← add
 const { trackEvent } = require('../../services/analytics/analytics.service');
 const { uploadToCloudinary, deleteFromCloudinary } = require('../../middlewares/upload.middleware');
 const {
@@ -64,9 +65,38 @@ const updateBasicController = asyncHandler(async (req, res) => {
 
 /**
  * PATCH /api/v1/profiles/me/skills
+ *
+ * Root cause fix: SkillsSection.jsx only ever calls this endpoint — it
+ * never hits PATCH /me/basic — so `profile.category` used to stay `null`
+ * forever for anyone who built their profile through the skills dropdown.
+ * That's why /category/:slug search always came up empty: the search
+ * filter does a hard `category: category._id` match, and nothing had a
+ * category set.
+ *
+ * Fix: every skill name in Category.skills belongs to exactly one
+ * category, so we derive the category here from whichever skills were
+ * just saved (picking the category with the most matching skill names,
+ * in case skills span more than one — e.g. a free-text fallback entry).
+ * If no skill name matches any category, we leave `profile.category`
+ * untouched rather than nulling out a previously-set value.
  */
 const updateSkillsController = asyncHandler(async (req, res) => {
-  const profile = await updateSection(req.user._id, { skills: req.body.skills });
+  const skills = req.body.skills || [];
+  const sectionData = { skills };
+
+  const skillNames = skills.map((s) => s?.name).filter(Boolean);
+
+  if (skillNames.length > 0) {
+    const matches = await Category.aggregate([
+      { $match: { skills: { $in: skillNames }, isActive: true } },
+      { $project: { matchCount: { $size: { $setIntersection: ['$skills', skillNames] } } } },
+      { $sort: { matchCount: -1 } },
+      { $limit: 1 },
+    ]);
+    if (matches[0]) sectionData.category = matches[0]._id;
+  }
+
+  const profile = await updateSection(req.user._id, sectionData);
   return res.status(200).json(new ApiResponse(200, { profile, completion: profile.completionPercentage }, 'Skills updated'));
 });
 
