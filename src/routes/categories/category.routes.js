@@ -9,6 +9,7 @@ const {
   createCategoryController,
   updateCategoryController,
   deleteCategoryController,
+  backfillProfileCategoriesController, // ← add
 } = require('../../controllers/categories/category.controller');
 
 // ── Public ────────────────────────────────────────────────────────
@@ -19,5 +20,10 @@ router.get('/:slug', getCategory);
 router.post(  '/',    protect, authorizeRoles('admin'), validate(createCategorySchema), createCategoryController);
 router.patch( '/:id', protect, authorizeRoles('admin'), validate(updateCategorySchema), updateCategoryController);
 router.delete('/:id', protect, authorizeRoles('admin'), deleteCategoryController);
+
+// One-off maintenance job — run once after deploying the skills→category
+// auto-derive fix in profile.controller.js, to backfill profiles that
+// were saved before that fix existed. Safe to re-run.
+router.post('/admin/backfill-profiles', protect, authorizeRoles('admin'), backfillProfileCategoriesController);
 
 module.exports = router;

@@ -44,6 +44,77 @@ const refreshProfileCount = async (categoryId) => {
   await Category.findByIdAndUpdate(categoryId, { profileCount: count });
 };
 
+/**
+ * backfillProfileCategories
+ *
+ * One-off maintenance job. Before the fix in profile.controller.js
+ * (updateSkillsController), saving skills never set profile.category —
+ * so any profile built that way is stuck with category: null and never
+ * shows up under /category/:slug, even though it matches on skill/text
+ * search (see the Zagasoft example).
+ *
+ * This walks every profile still stuck at category: null, and derives
+ * the category the same way the controller fix does now: find the
+ * Category whose `skills` array has the most names in common with the
+ * profile's own skills, and assign it.
+ *
+ * Safe to re-run any time — it only ever touches profiles that still
+ * have category: null, so profiles fixed by a normal skills-save (or a
+ * previous run of this job) are left alone.
+ */
+const backfillProfileCategories = async () => {
+  const Profile = require('../../models/profiles/profile.model');
+
+  const profiles = await Profile.find({
+    category: null,
+    'skills.0': { $exists: true }, // only profiles that actually have skills to match against
+  });
+
+  let updated = 0;
+  let skipped = 0;
+  const touchedCategoryIds = new Set();
+
+  for (const profile of profiles) {
+    const skillNames = profile.skills.map((s) => s.name).filter(Boolean);
+    if (skillNames.length === 0) {
+      skipped++;
+      continue;
+    }
+
+    const matches = await Category.aggregate([
+      { $match: { skills: { $in: skillNames }, isActive: true } },
+      { $project: { matchCount: { $size: { $setIntersection: ['$skills', skillNames] } } } },
+      { $sort: { matchCount: -1 } },
+      { $limit: 1 },
+    ]);
+
+    if (matches[0]) {
+      profile.category = matches[0]._id;
+      await profile.save();
+      touchedCategoryIds.add(matches[0]._id.toString());
+      updated++;
+    } else {
+      // No skill name matched any Category.skills list — likely a
+      // free-text fallback entry (SkillsSection falls back to a plain
+      // text input if categories fail to load). Left as-is on purpose;
+      // nothing to safely infer here.
+      skipped++;
+    }
+  }
+
+  // Recalculate profileCount only for categories that actually gained profiles
+  for (const categoryId of touchedCategoryIds) {
+    await refreshProfileCount(categoryId);
+  }
+
+  return {
+    totalChecked: profiles.length,
+    updated,
+    skipped,
+    categoriesRecounted: touchedCategoryIds.size,
+  };
+};
+
 module.exports = {
   createCategory,
   getAllCategories,
@@ -51,4 +122,5 @@ module.exports = {
   updateCategory,
   deleteCategory,
   refreshProfileCount,
+  backfillProfileCategories,
 };

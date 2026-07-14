@@ -6,6 +6,7 @@ const {
   getCategoryBySlug,
   updateCategory,
   deleteCategory,
+  backfillProfileCategories, // ← add
 } = require('../../services/categories/category.service');
 
 // Public — GET /api/v1/categories
@@ -38,10 +39,25 @@ const deleteCategoryController = asyncHandler(async (req, res) => {
   return res.status(200).json(new ApiResponse(200, {}, 'Category deleted'));
 });
 
+/**
+ * Admin — POST /api/v1/categories/admin/backfill-profiles
+ *
+ * One-off maintenance endpoint. Fixes profiles that still have
+ * category: null from before the skills→category auto-derive fix in
+ * profile.controller.js (updateSkillsController). Trigger this once
+ * after deploying that fix — safe to call more than once, it only
+ * touches profiles still stuck at category: null.
+ */
+const backfillProfileCategoriesController = asyncHandler(async (req, res) => {
+  const result = await backfillProfileCategories();
+  return res.status(200).json(new ApiResponse(200, result, 'Profile categories backfilled'));
+});
+
 module.exports = {
   listCategories,
   getCategory,
   createCategoryController,
   updateCategoryController,
   deleteCategoryController,
+  backfillProfileCategoriesController, // ← add
 };
