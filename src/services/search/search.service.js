@@ -47,8 +47,18 @@ const searchProfiles = async (queryParams, viewerUser) => {
 
   // Keyword search — uses MongoDB text index
   // Text index is on: fullName, bio, skills.name
+  //
+  // Wrapped in quotes to force PHRASE matching. Without quotes, Mongo's
+  // $text treats a multi-word query as OR-of-words — so a subcategory
+  // search like "DevOps Engineer" would match ANY profile whose bio/
+  // skills contain just "Engineer" or just "Developer" (very common
+  // words), which is why the same generic profile was surfacing under
+  // every subcategory. Quoting requires the exact phrase (as consecutive
+  // words, after stemming) to appear, which is what subcategory role
+  // matching actually needs.
   if (q) {
-    filter.$text = { $search: q };
+    const phrase = q.replace(/"/g, ''); // strip quotes from user input so they can't break the phrase syntax
+    filter.$text = { $search: `"${phrase}"` };
   }
 
   // Skills filter — match ANY of the provided skills
