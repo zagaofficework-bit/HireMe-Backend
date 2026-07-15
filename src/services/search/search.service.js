@@ -1,5 +1,6 @@
 const Profile = require('../../models/profiles/profile.model');
 const Analytics = require('../../models/analytics/analytics.model');
+const Category = require('../../models/categories/category.model'); // ← add — needed to expand the category filter (see categoryClause below)
 
 /**
  * Search Service
@@ -13,6 +14,10 @@ const Analytics = require('../../models/analytics/analytics.model');
  *  - Pagination
  *  - Tracks search events for analytics
  */
+
+// Escapes regex special chars so a raw string (category skill label, e.g.
+// "Node.js") can't break or unintentionally widen a RegExp match.
+const escapeRegex = (str) => String(str).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
 const searchProfiles = async (queryParams, viewerUser) => {
   const {
@@ -51,17 +56,60 @@ const searchProfiles = async (queryParams, viewerUser) => {
     const skillArray = skills.split(',').map((s) => s.trim()).filter(Boolean);
     if (skillArray.length > 0) {
       filter['skills.name'] = {
-        $in: skillArray.map((s) => new RegExp(s, 'i')), // case-insensitive
+        $in: skillArray.map((s) => new RegExp(escapeRegex(s), 'i')), // case-insensitive
       };
     }
   }
 
-  // Category filter
-  if (category) filter.category = category;
+  /**
+   * Category filter
+   *
+   * `profile.category` is unreliable for a large chunk of profiles: it's
+   * meant to be auto-derived (updateSkillsController / backfillProfileCategories)
+   * by matching profile.skills[].name (tech tags, e.g. "React.js", "Node.js")
+   * against Category.skills (role-title subcategories, e.g. "Full Stack
+   * Developer", "DevOps Engineer"). Those two vocabularies almost never
+   * overlap in real data — confirmed case: a profile's bio literally says
+   * "Full Stack Developer" but its skills array only has React.js/Node.js/
+   * MongoDB — so the derive logic finds no match and `category` stays null.
+   *
+   * Net effect: CategoryPage's subcategory click sends BOTH `category` and
+   * `q` (the subcategory label) — and the strict `category` equality wipes
+   * out results for every profile whose category never got set, even
+   * though a plain `q`-only search finds them fine.
+   *
+   * Fix: alongside the exact `category` match, also accept profiles whose
+   * skills/bio mention one of THIS category's own subcategory labels. That
+   * catches profiles created before an explicit category was ever set —
+   * exactly the case above — without needing a data migration.
+   */
+  let categoryClause = null;
+  if (category) {
+    const catDoc = await Category.findById(category).select('skills').lean();
+    const labelRegexes = (catDoc?.skills || []).map((s) => new RegExp(escapeRegex(s), 'i'));
+
+    categoryClause = { category };
+    if (labelRegexes.length) {
+      categoryClause = {
+        $or: [
+          { category },
+          { 'skills.name': { $in: labelRegexes } },
+          { bio: { $in: labelRegexes } },
+        ],
+      };
+    }
+  }
+
+  if (categoryClause) {
+    // $text must stay top-level (Mongo doesn't allow $text inside $or), so
+    // combine via $and instead of merging categoryClause's $or directly
+    // into the top-level filter when a keyword search is also present.
+    filter.$and = [...(filter.$and || []), categoryClause];
+  }
 
   // Location filters
-  if (city)  filter['location.city']  = new RegExp(city, 'i');
-  if (state) filter['location.state'] = new RegExp(state, 'i');
+  if (city)  filter['location.city']  = new RegExp(escapeRegex(city), 'i');
+  if (state) filter['location.state'] = new RegExp(escapeRegex(state), 'i');
 
   // Work type
   if (workType)     filter.workType     = workType;
